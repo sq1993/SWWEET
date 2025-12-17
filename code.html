@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>梦幻圣诞树</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #000;
+            touch-action: none;
+        }
+        .info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: #fff;
+            font-family: Arial, sans-serif;
+            text-shadow: 0 0 5px #fff;
+        }
+        .controls {
+            position: absolute;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 10px;
+            z-index: 10;
+        }
+        .btn {
+            padding: 6px 12px;
+            background: rgba(255,255,255,0.2);
+            color: #fff;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            backdrop-filter: blur(5px);
+        }
+        .btn:hover {
+            background: rgba(255,255,255,0.4);
+        }
+    </style>
+</head>
+<body>
+    <div class="info">Merry Christmas 🎄</div>
+    <div class="controls">
+        <button class="btn" id="colorBtn">切换主题</button>
+        <button class="btn" id="snowBtn">雪花模式</button>
+    </div>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { GlitchPass } from 'three/addons/postprocessing/GlitchPass.js';
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+
+        // 初始化场景、相机、渲染器
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.z = 8;
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        document.body.appendChild(renderer.domElement);
+
+        // 后期特效（故障效果，增加科技感）
+        const composer = new EffectComposer(renderer);
+        composer.addPass(new RenderPass(scene, camera));
+        const glitchPass = new GlitchPass();
+        glitchPass.goWild = false;
+        composer.addPass(glitchPass);
+
+        // 轨道控制器
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.rotateSpeed = 0.5;
+
+        // 环境光
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.3);
+        scene.add(ambientLight);
+
+        // 点光源（突出圣诞树层次）
+        const pointLight = new THREE.PointLight(0xff69b4, 1, 100);
+        pointLight.position.set(0, 3, 5);
+        scene.add(pointLight);
+
+        // 圣诞树粒子系统
+        const particleCount = 12000;
+        const particles = new THREE.BufferGeometry();
+        const positions = new Float32Array(particleCount * 3);
+        const colors = new Float32Array(particleCount * 3);
+        const sizes = new Float32Array(particleCount);
+
+        // 生成圣诞树形状（带树冠、树干层次）
+        const treeSections = [
+            { height: 6, radius: 4, color: new THREE.Color(0xff69b4) }, // 顶部
+            { height: 4, radius: 3, color: new THREE.Color(0xffc0cb) }, // 中部
+            { height: 2, radius: 2, color: new THREE.Color(0x98fb98) }, // 底部（树干附近）
+        ];
+
+        let index = 0;
+        treeSections.forEach(section => {
+            const { height, radius, color } = section;
+            for (let i = 0; i < particleCount / treeSections.length; i++) {
+                const t = Math.random() * height;
+                const r = radius * (1 - t / height);
+                const theta = Math.random() * Math.PI * 2;
+                const x = r * Math.cos(theta);
+                const y = t - height / 2;
+                const z = r * Math.sin(theta);
+
+                positions[index * 3] = x;
+                positions[index * 3 + 1] = y;
+                positions[index * 3 + 2] = z;
+
+                // 颜色渐变
+                const particleColor = new THREE.Color().copy(color);
+                particleColor.lerp(new THREE.Color(0xffffff), Math.random() * 0.7);
+                colors[index * 3] = particleColor.r;
+                colors[index * 3 + 1] = particleColor.g;
+                colors[index * 3 + 2] = particleColor.b;
+
+                // 粒子大小随机
+                sizes[index] = Math.random() * 0.1 + 0.02;
+
+                index++;
+            }
+        });
+
+        particles.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        particles.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+        particles.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+
+        // 粒子材质（带辉光、透明效果）
+        const material = new THREE.PointsMaterial({
+            sizeAttenuation: true,
+            vertexColors: true,
+            transparent: true,
+            opacity: 0.9,
+            depthWrite: false,
+            blending: THREE.AdditiveBlending
+        });
+
+        const tree = new THREE.Points(particles, material);
+        scene.add(tree);
+
+        // 雪花粒子（默认隐藏，可通过按钮切换）
+        let snowSystem = null;
+        function createSnow() {
+            if (snowSystem) scene.remove(snowSystem);
+            const snowCount = 2000;
+            const snowGeo = new THREE.BufferGeometry();
+            const snowPos = new Float32Array(snowCount * 3);
+            const snowCol = new Float32Array(snowCount * 3);
+            const snowSize = new Float32Array(snowCount);
+
+            for (let i = 0; i < snowCount; i++) {
+                snowPos[i * 3] = (Math.random() - 0.5) * 15;
+                snowPos[i * 3 + 1] = Math.random() * 10 + 5;
+                snowPos[i * 3 + 2] = (Math.random() - 0.5) * 15;
+                snowCol[i * 3] = 1;
+                snowCol[i * 3 + 1] = 1;
+                snowCol[i * 3 + 2] = 1;
+                snowSize[i] = Math.random() * 0.1 + 0.05;
+            }
+
+            snowGeo.setAttribute('position', new THREE.BufferAttribute(snowPos, 3));
+            snowGeo.setAttribute('color', new THREE.BufferAttribute(snowCol, 3));
+            snowGeo.setAttribute('size', new THREE.BufferAttribute(snowSize, 1));
+
+            const snowMat = new THREE.PointsMaterial({
+                sizeAttenuation: true,
+                vertexColors: true,
+                transparent: true,
+                opacity: 0.7,
+                depthWrite: false,
+                blending: THREE.AdditiveBlending
+            });
+
+            snowSystem = new THREE.Points(snowGeo, snowMat);
+            scene.add(snowSystem);
+        }
+
+        // 颜色主题切换
+        let colorIndex = 0;
+        const colorThemes = [
+            [new THREE.Color(0xff69b4), new THREE.Color(0xffc0cb), new THREE.Color(0x98fb98)], // 粉紫主题
+            [new THREE.Color(0xffd700), new THREE.Color(0x00ff00), new THREE.Color(0x8b4513)], // 经典圣诞色
+            [new THREE.Color(0x00bfff), new THREE.Color(0x87ceeb), new THREE.Color(0x4682b4)], // 蓝色主题
+        ];
+        function switchColor() {
+            colorIndex = (colorIndex + 1) % colorThemes.length;
+            const theme = colorThemes[colorIndex];
+            index = 0;
+            treeSections.forEach((section, i) => {
+                const color = theme[i];
+                for (let j = 0; j < particleCount / treeSections.length; j++) {
+                    const particleColor = new THREE.Color().copy(color);
+                    particleColor.lerp(new THREE.Color(0xffffff), Math.random() * 0.7);
+                    colors[index * 3] = particleColor.r;
+                    colors[index * 3 + 1] = particleColor.g;
+                    colors[index * 3 + 2] = particleColor.b;
+                    index++;
+                }
+            });
+            particles.attributes.color.needsUpdate = true;
+        }
+
+        // 按钮事件
+        document.getElementById('colorBtn').addEventListener('click', switchColor);
+        document.getElementById('snowBtn').addEventListener('click', () => {
+            if (snowSystem) {
+                scene.remove(snowSystem);
+                snowSystem = null;
+            } else {
+                createSnow();
+            }
+        });
+
+        // 动画循环
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+
+            // 雪花下落动画
+            if (snowSystem) {
+                const pos = snowSystem.geometry.attributes.position.array;
+                for (let i = 1; i < pos.length; i += 3) {
+                    pos[i] -= 0.05;
+                    if (pos[i] < -5) {
+                        pos[i] = Math.random() * 10 + 5;
+                        pos[i - 1] = (Math.random() - 0.5) * 15;
+                        pos[i + 1] = (Math.random() - 0.5) * 15;
+                    }
+                }
+                snowSystem.geometry.attributes.position.needsUpdate = true;
+            }
+
+            composer.render();
+        }
+        animate();
+
+        // 窗口适配
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            composer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
